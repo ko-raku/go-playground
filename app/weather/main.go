@@ -1,11 +1,12 @@
-package weather
+package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	_ "github.com/go-sql-driver/mysql" // MySQLドライバ
 	"io"
 	"net/http"
-	"time"
 )
 
 type ResponseData struct {
@@ -66,7 +67,7 @@ type ResponseData struct {
 
 func main() {
 	apiKey := "{API key}"
-	apiURL := "https://api.openweathermap.org/data/2.5/forecast/?q=TOKYO&units=metric&cnt=5&appid="
+	apiURL := "https://api.openweathermap.org/data/2.5/forecast/?q=TOKYO,jp&units=metric&lang=ja&appid="
 	response, err := http.Get(apiURL + apiKey)
 
 	if err != nil {
@@ -94,12 +95,53 @@ func main() {
 
 	fmt.Println("City Name:", responseData.City.Name)
 
-	for _, item := range responseData.List {
-		timestamp := int64(item.Dt)
-		t := time.Unix(timestamp, 0)
+	db, err := sql.Open("mysql", "go:go@tcp(mysql-db:3306)/playground")
+	if nil != err {
+		fmt.Println("データベース接続エラー:", err)
+		return
+	}
+	defer db.Close()
 
-		layout := "2006-01-01 15:04:05"
-		formattedDate := t.Format(layout)
-		fmt.Printf("日付: %s, 気温: %.2f℃\n", formattedDate, item.Main.Temp)
+	// トランザクション開始
+	tx, err := db.Begin()
+	if err != nil {
+		fmt.Println("トランザクションの開始エラー:", err)
+		return
+	}
+	defer func() {
+		if err != nil {
+			// トランザクション中にエラーが発生した場合、ロールバック
+			err := tx.Rollback()
+			if err != nil {
+				return
+			}
+		} else {
+			// エラーがない場合、コミット
+			err := tx.Commit()
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	// city登録
+	_, err = db.Exec("INSERT INTO city (id, country, name) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE id = VALUES(id), country = VALUES(country), name = VALUES(name)", responseData.City.Id, responseData.City.Country, responseData.City.Name)
+	if err != nil {
+		fmt.Println("データベースエラー:", err)
+	}
+
+	// city_detail登録
+	_, err = db.Exec("INSERT INTO city_detail (city_id, lat, lon, population, timezone) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE city_id = VALUES(city_id), population = VALUES(population)", responseData.City.Id, responseData.City.Coord.Lat, responseData.City.Coord.Lon, responseData.City.Population, responseData.City.Timezone)
+	if err != nil {
+		fmt.Println("データベースエラー:", err)
+	}
+
+	for _, item := range responseData.List {
+		fmt.Printf("日付: %s, 気温: %.2f\n", item.DtTxt, item.Main.Temp)
+		// city_temperature登録
+		_, err = db.Exec("INSERT INTO city_temperature (city_id, date, temperature, pressure, humidity) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE city_id = VALUES(city_id), date = VALUES(date), temperature = VALUES(temperature), pressure = VALUES(pressure), humidity = VALUES(humidity)", responseData.City.Id, item.DtTxt, item.Main.Temp, item.Main.Pressure, item.Main.Humidity)
+		if err != nil {
+			fmt.Println("データベースエラー:", err)
+		}
 	}
 }

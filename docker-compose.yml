@@ -1,12 +1,41 @@
-version: '3'
-
+version: '3.9'
 services:
-  go:
+  go-app:
     build:
-      context: .
-      dockerfile: DockerFile
-    command: /bin/sh -c "go run main.go"
-    stdin_open: true
-    tty: true
+      context: ./app  # Goアプリケーションのコードがあるディレクトリへのパス
+      args:
+        - target=dev
+    ports:
+      - "18000:8080"  # Goアプリケーションがリッスンするポート
+    environment:
+      GO_ENV: dev
+      PORT: 8080
+      MYSQL_HOST: mysql-db
+      MYSQL_PORT: 3306
+      MYSQL_USER: go
+      MYSQL_PASSWORD: go
+      MYSQL_DB: playground
     volumes:
-      - .:/app
+      - ./app:/app
+    links:
+      - mysql-db
+
+  mysql-db:
+    image: mysql:8.0.29
+    platform: linux/amd64
+    container_name: mysql-db
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_USER: go
+      MYSQL_PASSWORD: go
+      MYSQL_DATABASE: playground
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - $PWD/_tools/mysql/conf.d:/etc/mysql/conf.d:cached
+      - ./_tools/mysql/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    ports:
+      - "33306:3306"
+    command: --init-file /docker-entrypoint-initdb.d/schema.sql
+
+volumes:
+  mysql-data:
