@@ -1,9 +1,9 @@
-package main
+package weather
 
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"time"
 )
@@ -68,13 +68,19 @@ func main() {
 	apiKey := "{API key}"
 	apiURL := "https://api.openweathermap.org/data/2.5/forecast/?q=TOKYO&units=metric&cnt=5&appid="
 	response, err := http.Get(apiURL + apiKey)
+
 	if err != nil {
 		fmt.Println("HTTP GETリクエストエラー:", err)
 		return
 	}
-	defer response.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
 
-	body, err := ioutil.ReadAll(response.Body)
+		}
+	}(response.Body)
+
+	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		fmt.Println("レスポンスの読み取りエラー", err)
 		return
@@ -82,7 +88,7 @@ func main() {
 
 	var responseData ResponseData
 	if err := json.Unmarshal(body, &responseData); err != nil {
-		fmt.Println("JSONでコードエラー", err)
+		fmt.Println("JSONデコードエラー", err)
 		return
 	}
 
